@@ -5,7 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const PAGE_SIZE = 50;
 const numSamples = 1000000;
 const BUFFER_SIZE = 750;
-const MAX_ABSTRACTA_THREADS = 50;
+const MAX_ABSTRACTA_THREADS = 100;
 
 const isTokenExpired = (token) => (Date.now() >= JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).exp * 1000)
 
