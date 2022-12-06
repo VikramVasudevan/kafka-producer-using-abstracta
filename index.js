@@ -5,9 +5,11 @@ const { v4: uuidv4 } = require('uuid');
 const PAGE_SIZE = 50;
 const numSamples = 1000000;
 const BUFFER_SIZE = 750;
-const MAX_ABSTRACTA_THREADS = 10;
+const MAX_ABSTRACTA_THREADS = 25;
 
 const isTokenExpired = (token) => (Date.now() >= JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).exp * 1000)
+
+let G_AUTH_TOKEN;
 
 const apiCreds = {
     grant_type: "client_credentials",
@@ -31,7 +33,8 @@ async function authenticate() {
     return response.data.access_token;
 }
 
-async function getData(token, from, to, rowsFetchedSoFar) {
+async function getData(from, to, rowsFetchedSoFar) {
+    const token = await refreshToken();
     console.log("Fetching data...", arguments);
     var data = {
         "from": from,
@@ -59,12 +62,13 @@ async function getData(token, from, to, rowsFetchedSoFar) {
     rowsFetchedSoFar += response?.data?.length;
     console.log("rowsFetched = ", rowsFetchedSoFar)
     if (response?.data?.length > 0) {
-        response = await getData(token, from + PAGE_SIZE, to + PAGE_SIZE, rowsFetchedSoFar);
+        response = await getData(from + PAGE_SIZE, to + PAGE_SIZE, rowsFetchedSoFar);
     }
     return response;
 }
 
-async function addData(token, data) {
+async function addData(data) {
+    const token = await refreshToken();
     var config = {
         method: 'post',
         url: 'http://localhost:8080/rest/data/post/demo_001/app_001/kafka_002/api_001/0.0.0',
@@ -79,11 +83,12 @@ async function addData(token, data) {
     return response;
 }
 
-async function refreshToken(token) {
-    if (!token || isTokenExpired(token)) {
-        return await authenticate();
-    } else
-        return token;
+async function refreshToken() {
+    if (!G_AUTH_TOKEN || isTokenExpired(G_AUTH_TOKEN)) {
+        G_AUTH_TOKEN = await authenticate();
+    }
+
+    return G_AUTH_TOKEN;
 }
 async function authAndGetData() {
     const token = await refreshToken();
@@ -93,7 +98,6 @@ async function authAndGetData() {
 }
 
 async function authAndPostData() {
-    let token = await refreshToken();
     var data = [];
     var promises = [];
 
@@ -109,10 +113,10 @@ async function authAndPostData() {
             console.log(new Date(), i, "Ingesting next", data.length, 'records to Kafka through Abstracta');
             // console.log('Adding message ', i)
             if (promises.length <= MAX_ABSTRACTA_THREADS)
-                promises.push(addDataWithTokenGen(token, data));
+                promises.push(addDataWithTokenGen(data));
             else {
                 await Promise.all(promises);
-                promises = [addDataWithTokenGen(token, data)];
+                promises = [addDataWithTokenGen(data)];
             }
             data = [message];
         }
@@ -121,20 +125,20 @@ async function authAndPostData() {
 
 }
 
-async function addDataWithTokenGen(token, data) {
+async function addDataWithTokenGen(data) {
     try {
-        token = await refreshToken(token);
-        await addData(token, data);
+        await refreshToken();
+        await addData(data);
     } catch (e) {
         //Unauthorized
         // Retry again with a fresh token
         console.warn("Error Posting Data", e);
     }
-    return token;
 }
 
 async function addAndFetchData() {
     const startTime = new Date();
+    await refreshToken();
     await authAndPostData();
     // await authAndGetData();
     console.log("Started ", startTime);
