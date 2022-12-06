@@ -2,6 +2,13 @@ const axios = require('axios');
 const qs = require('qs');
 const { v4: uuidv4 } = require('uuid');
 
+const PAGE_SIZE = 50;
+const numSamples = 1000000;
+const BUFFER_SIZE = 750;
+const MAX_ABSTRACTA_THREADS = 10;
+
+const isTokenExpired = (token) => (Date.now() >= JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).exp * 1000)
+
 const apiCreds = {
     grant_type: "client_credentials",
     client_id: '7ff4dcfc-ce2e-4901-86e0-c9d7a0a6b355',
@@ -24,9 +31,6 @@ async function authenticate() {
     return response.data.access_token;
 }
 
-const pageSize = 50;
-const numSamples = 1000000;
-const bufferSize = 750;
 async function getData(token, from, to, rowsFetchedSoFar) {
     console.log("Fetching data...", arguments);
     var data = {
@@ -55,7 +59,7 @@ async function getData(token, from, to, rowsFetchedSoFar) {
     rowsFetchedSoFar += response?.data?.length;
     console.log("rowsFetched = ", rowsFetchedSoFar)
     if (response?.data?.length > 0) {
-        response = await getData(token, from + pageSize, to + pageSize, rowsFetchedSoFar);
+        response = await getData(token, from + PAGE_SIZE, to + PAGE_SIZE, rowsFetchedSoFar);
     }
     return response;
 }
@@ -75,43 +79,58 @@ async function addData(token, data) {
     return response;
 }
 
+async function refreshToken(token) {
+    if (!token || isTokenExpired(token)) {
+        return await authenticate();
+    } else
+        return token;
+}
 async function authAndGetData() {
-    const token = await authenticate();
-    const response = await getData(token, 1, pageSize, 0);
+    const token = await refreshToken();
+    const response = await getData(token, 1, PAGE_SIZE, 0);
     console.log("response = ", response?.data);
 
 }
 
 async function authAndPostData() {
-    let token = await authenticate();
+    let token = await refreshToken();
     var data = [];
+    var promises = [];
 
     for (var i = 0; i < numSamples; i++) {
         const message = {
             "text": i + ". some random text - " + uuidv4()
         };
-        if (data.length < bufferSize) {
+        if (data.length < BUFFER_SIZE) {
             // console.log('Adding message ', i)
             data.push(message)
         }
         else {
             console.log(new Date(), i, "Ingesting next", data.length, 'records to Kafka through Abstracta');
             // console.log('Adding message ', i)
-            try {
-                await addData(token, data);
-            } catch (e) {
-                //Unauthorized
-                // Retry again with a fresh token
-                console.warn("!!!WARNING!!! - TOKEN EXPIRED ... REGENERATING TOKEN");
-                token = await authenticate();
-                await addData(token, data);
+            if (promises.length <= MAX_ABSTRACTA_THREADS)
+                promises.push(addDataWithTokenGen(token, data));
+            else {
+                await Promise.all(promises);
+                promises = [addDataWithTokenGen(token, data)];
             }
-
             data = [message];
         }
         // console.log("response = ", response.data);
     }
 
+}
+
+async function addDataWithTokenGen(token, data) {
+    try {
+        token = await refreshToken(token);
+        await addData(token, data);
+    } catch (e) {
+        //Unauthorized
+        // Retry again with a fresh token
+        console.warn("Error Posting Data", e);
+    }
+    return token;
 }
 
 async function addAndFetchData() {
