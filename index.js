@@ -26,7 +26,7 @@ async function authenticate() {
 
 const pageSize = 50;
 const numSamples = 1000000;
-const bufferSize = 500;
+const bufferSize = 750;
 async function getData(token, from, to, rowsFetchedSoFar) {
     console.log("Fetching data...", arguments);
     var data = {
