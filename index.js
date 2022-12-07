@@ -3,7 +3,7 @@ const qs = require('qs');
 const { v4: uuidv4 } = require('uuid');
 
 const PAGE_SIZE = 50;
-const numSamples = 1000000;
+const numSamples = 1000;
 const BUFFER_SIZE = 750;
 const MAX_ABSTRACTA_THREADS = 100;
 
@@ -112,15 +112,27 @@ async function authAndPostData() {
         else {
             console.log(new Date(), i, "Ingesting next", data.length, 'records to Kafka through Abstracta');
             // console.log('Adding message ', i)
-            if (promises.length <= MAX_ABSTRACTA_THREADS)
+            if (promises.length <= MAX_ABSTRACTA_THREADS) {
                 promises.push(addDataWithTokenGen(data));
+                // console.log('Promise pending ', promises.length)
+            }
             else {
+                console.log('Submitting promises ', promises.length)
                 await Promise.all(promises);
                 promises = [addDataWithTokenGen(data)];
             }
             data = [message];
         }
         // console.log("response = ", response.data);
+    }
+
+    if(data.length > 0) {
+        promises.push(addDataWithTokenGen(data));
+    }
+    if (promises.length > 0) {
+        console.log(new Date(), i, "Ingesting last", promises.length, '|', data.length, 'records to Kafka through Abstracta');
+        await Promise.all(promises);
+        promises = [];
     }
 
 }
