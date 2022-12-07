@@ -3,7 +3,7 @@ const qs = require('qs');
 const { v4: uuidv4 } = require('uuid');
 
 const PAGE_SIZE = 50;
-const numSamples = 1000;
+const numSamples = 1000000;
 const BUFFER_SIZE = 750;
 const MAX_ABSTRACTA_THREADS = 100;
 
